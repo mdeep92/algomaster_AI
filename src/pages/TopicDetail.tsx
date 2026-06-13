@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { TOPICS } from '@/lib/data';
 import { generateExplanation } from '@/lib/gemini';
@@ -16,10 +16,11 @@ export default function TopicDetail() {
   const [activeTab, setActiveTab] = useState<'theory' | 'visualize' | 'practice'>('theory');
   const [explanation, setExplanation] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { isCompleted, toggle } = useCompletedTopics();
 
-  useEffect(() => {
-    if (!topic || activeTab !== 'theory' || explanation) return;
+  const loadExplanation = useCallback(() => {
+    if (!topic) return;
 
     // Serve a previously generated lesson from cache instead of re-calling Gemini.
     const cacheKey = `algomaster:theory:${topic.id}`;
@@ -30,14 +31,21 @@ export default function TopicDetail() {
     }
 
     setLoading(true);
+    setError(null);
     generateExplanation(topic.title)
       .then(text => {
         const content = text || 'Failed to load content.';
         setExplanation(content);
         if (text) localStorage.setItem(cacheKey, content);
       })
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load lesson.'))
       .finally(() => setLoading(false));
-  }, [topicId, activeTab, explanation]);
+  }, [topic?.id]);
+
+  useEffect(() => {
+    if (!topic || activeTab !== 'theory' || explanation || error) return;
+    loadExplanation();
+  }, [topicId, activeTab, explanation, error, loadExplanation]);
 
   if (!topic) return <div>Topic not found</div>;
 
@@ -130,6 +138,7 @@ export default function TopicDetail() {
                       onClick={() => {
                         if (t.id !== topic.id) {
                           setExplanation(''); // Reset explanation for new topic
+                          setError(null);
                         }
                       }}
                       className={cn(
@@ -178,6 +187,22 @@ export default function TopicDetail() {
                       <p className="text-white font-medium">AI Tutor is preparing your lesson</p>
                       <p className="text-neutral-500 text-xs animate-pulse">Analyzing {topic.title} concepts...</p>
                     </div>
+                  </div>
+                ) : error ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
+                    <div className="w-14 h-14 rounded-full bg-red-500/10 flex items-center justify-center text-red-400">
+                      <Bot size={28} />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-white font-medium">Couldn't load this lesson</p>
+                      <p className="text-neutral-500 text-sm">{error}</p>
+                    </div>
+                    <button
+                      onClick={loadExplanation}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Try again
+                    </button>
                   </div>
                 ) : (
                   <div className="prose prose-invert max-w-none 
