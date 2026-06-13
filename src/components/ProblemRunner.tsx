@@ -1,18 +1,23 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import { Play, CheckCircle2, AlertCircle, Loader2, Bot } from 'lucide-react';
 import { checkSolution } from '@/lib/gemini';
+import { useLocalStorage } from '@/lib/useLocalStorage';
 import ReactMarkdown from 'react-markdown';
 
 interface ProblemRunnerProps {
   topicTitle: string;
 }
 
+// Hard cap on user code execution so an infinite loop can't hang forever.
+const EXECUTION_TIMEOUT_MS = 3000;
+
 export default function ProblemRunner({ topicTitle }: ProblemRunnerProps) {
   const [output, setOutput] = useState<string[]>([]);
   const [aiFeedback, setAiFeedback] = useState<string | null>(null);
   const [isChecking, setIsChecking] = useState(false);
-  const [isGettingHint, setIsGettingHint] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const workerRef = useRef<Worker | null>(null);
 
   const defaultCode = `// Write a function to implement ${topicTitle}
 // You can use console.log to debug
@@ -26,29 +31,52 @@ function solution(input) {
 // console.log(solution([1, 2, 3]));
 `;
 
-  const [code, setCode] = useState(defaultCode);
+  // Persist the user's code per topic so edits survive reloads.
+  const [code, setCode] = useLocalStorage(`algomaster:code:${topicTitle}`, defaultCode);
+
+  // Tear down any running worker on unmount.
+  useEffect(() => {
+    return () => workerRef.current?.terminate();
+  }, []);
 
   const runCode = () => {
+    // Cancel a previous in-flight run, if any.
+    workerRef.current?.terminate();
     setOutput([]);
-    const logs: string[] = [];
-    
-    // Override console.log to capture output
-    const originalLog = console.log;
-    console.log = (...args) => {
-      logs.push(args.map(a => JSON.stringify(a)).join(' '));
+    setIsRunning(true);
+
+    const worker = new Worker(new URL('../lib/codeRunner.worker.ts', import.meta.url), {
+      type: 'module',
+    });
+    workerRef.current = worker;
+
+    const timeout = setTimeout(() => {
+      worker.terminate();
+      workerRef.current = null;
+      setOutput(['Error: Execution timed out (possible infinite loop).']);
+      setIsRunning(false);
+    }, EXECUTION_TIMEOUT_MS);
+
+    worker.onmessage = (event: MessageEvent<{ ok: boolean; logs: string[]; error?: string }>) => {
+      clearTimeout(timeout);
+      const { ok, logs, error } = event.data;
+      const lines = [...logs];
+      if (!ok && error) lines.push(`Error: ${error}`);
+      setOutput(lines.length > 0 ? lines : ['Code executed successfully (no output)']);
+      setIsRunning(false);
+      worker.terminate();
+      workerRef.current = null;
     };
 
-    try {
-      // Dangerous: eval/new Function. 
-      // In a real app, use a sandboxed iframe or web worker.
-      const userFunc = new Function(code);
-      userFunc();
-      setOutput(logs.length > 0 ? logs : ['Code executed successfully (no output)']);
-    } catch (err: any) {
-      setOutput(prev => [...prev, `Error: ${err.message}`]);
-    } finally {
-      console.log = originalLog;
-    }
+    worker.onerror = (event) => {
+      clearTimeout(timeout);
+      setOutput([`Error: ${event.message}`]);
+      setIsRunning(false);
+      worker.terminate();
+      workerRef.current = null;
+    };
+
+    worker.postMessage(code);
   };
 
   const handleAICheck = async () => {
@@ -57,24 +85,6 @@ function solution(input) {
     const feedback = await checkSolution(`Implement ${topicTitle}`, code, 'javascript');
     setAiFeedback(feedback || "Could not generate feedback.");
     setIsChecking(false);
-  };
-
-  const handleGetHint = async () => {
-    setIsGettingHint(true);
-    setAiFeedback(null);
-    // We reuse checkSolution but ask for a hint in the prompt context if we were to change the API.
-    // Since checkSolution is fixed, let's just use it but maybe I should have made it more flexible.
-    // For now, I'll just use checkSolution but ask the user to check their logic.
-    // Actually, let's just use generateExplanation for a hint.
-    
-    // Let's use a new call for hint.
-    // Since I can't easily change the API right now without editing gemini.ts, 
-    // I'll just use checkSolution and hope it gives constructive feedback which acts as a hint.
-    // Or I can just add a "Hint" feature to gemini.ts.
-    
-    // Let's just use checkSolution for now, it usually gives hints if code is incomplete.
-    await handleAICheck();
-    setIsGettingHint(false);
   };
 
   const resetCode = () => {
@@ -105,11 +115,13 @@ function solution(input) {
           <div className="bg-neutral-900 border-b border-neutral-800 p-2 flex justify-between items-center">
             <span className="text-xs text-neutral-500 font-mono px-2">main.js</span>
             <div className="flex gap-2">
-              <button 
+              <button
                 onClick={runCode}
-                className="flex items-center gap-2 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white text-xs rounded transition-colors"
+                disabled={isRunning}
+                className="flex items-center gap-2 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white text-xs rounded transition-colors disabled:opacity-50"
               >
-                <Play size={14} /> Run Code
+                {isRunning ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                {isRunning ? "Running..." : "Run Code"}
               </button>
               <button 
                 onClick={handleAICheck}

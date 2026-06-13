@@ -3,8 +3,9 @@ import { useParams, Link } from 'react-router-dom';
 import { TOPICS } from '@/lib/data';
 import { generateExplanation } from '@/lib/gemini';
 import ReactMarkdown from 'react-markdown';
-import { Bot, Code2, PlayCircle, ChevronRight } from 'lucide-react';
+import { Bot, Code2, PlayCircle, ChevronRight, CheckCircle2, Circle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useCompletedTopics } from '@/lib/progress';
 import SortingVisualizer from '@/components/visualizers/SortingVisualizer';
 import PathfindingVisualizer from '@/components/visualizers/PathfindingVisualizer';
 import ProblemRunner from '@/components/ProblemRunner';
@@ -15,19 +16,32 @@ export default function TopicDetail() {
   const [activeTab, setActiveTab] = useState<'theory' | 'visualize' | 'practice'>('theory');
   const [explanation, setExplanation] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const { isCompleted, toggle } = useCompletedTopics();
 
   useEffect(() => {
-    if (topic && activeTab === 'theory' && !explanation) {
-      setLoading(true);
-      generateExplanation(topic.title)
-        .then(text => {
-          setExplanation(text || 'Failed to load content.');
-        })
-        .finally(() => setLoading(false));
+    if (!topic || activeTab !== 'theory' || explanation) return;
+
+    // Serve a previously generated lesson from cache instead of re-calling Gemini.
+    const cacheKey = `algomaster:theory:${topic.id}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      setExplanation(cached);
+      return;
     }
-  }, [topic, activeTab]);
+
+    setLoading(true);
+    generateExplanation(topic.title)
+      .then(text => {
+        const content = text || 'Failed to load content.';
+        setExplanation(content);
+        if (text) localStorage.setItem(cacheKey, content);
+      })
+      .finally(() => setLoading(false));
+  }, [topicId, activeTab, explanation]);
 
   if (!topic) return <div>Topic not found</div>;
+
+  const completed = isCompleted(topic.id);
 
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col">
@@ -36,10 +50,24 @@ export default function TopicDetail() {
           <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">{topic.title}</h1>
           <p className="text-neutral-400">{topic.description}</p>
         </div>
-        <div className="hidden md:flex items-center gap-2 text-xs font-medium text-neutral-500 uppercase tracking-widest bg-neutral-800/50 px-3 py-1.5 rounded-full border border-neutral-700/50">
-          <span>{topic.category.replace('-', ' ')}</span>
-          <ChevronRight size={12} />
-          <span className="text-indigo-400">{topic.title}</span>
+        <div className="flex items-center gap-3">
+          <div className="hidden md:flex items-center gap-2 text-xs font-medium text-neutral-500 uppercase tracking-widest bg-neutral-800/50 px-3 py-1.5 rounded-full border border-neutral-700/50">
+            <span>{topic.category.replace('-', ' ')}</span>
+            <ChevronRight size={12} />
+            <span className="text-indigo-400">{topic.title}</span>
+          </div>
+          <button
+            onClick={() => toggle(topic.id)}
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors",
+              completed
+                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
+                : "bg-neutral-800/50 text-neutral-400 border-neutral-700/50 hover:text-white hover:border-neutral-600"
+            )}
+          >
+            {completed ? <CheckCircle2 size={16} /> : <Circle size={16} />}
+            {completed ? "Completed" : "Mark complete"}
+          </button>
         </div>
       </div>
 
