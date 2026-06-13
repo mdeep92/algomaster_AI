@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import { Play, Loader2, Bot, AlertCircle, RotateCcw } from 'lucide-react';
-import { checkSolution } from '@/lib/gemini';
+import { checkSolution } from '@/lib/ai';
 import { useLocalStorage } from '@/lib/useLocalStorage';
 import ReactMarkdown from 'react-markdown';
 

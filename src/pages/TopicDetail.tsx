@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { TOPICS } from '@/lib/data';
-import { generateExplanation } from '@/lib/gemini';
+import { generateExplanation } from '@/lib/ai';
 import ReactMarkdown from 'react-markdown';
 import { Bot, Code2, PlayCircle, ChevronRight, CheckCircle2, Circle } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -22,7 +22,7 @@ export default function TopicDetail() {
   const loadExplanation = useCallback(() => {
     if (!topic) return;
 
-    // Serve a previously generated lesson from cache instead of re-calling Gemini.
+    // Serve a previously generated lesson from cache instead of re-calling Claude.
     const cacheKey = `algomaster:theory:${topic.id}`;
     const cached = localStorage.getItem(cacheKey);
     if (cached) {

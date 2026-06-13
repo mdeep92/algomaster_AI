@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-AlgoMaster AI is an interactive single-page app for learning Data Structures and Algorithms, with AI-powered tutoring (Gemini), algorithm visualizers, and an in-browser coding practice arena. It is a Google AI Studio app — `package.json` is named `react-example` but the product is AlgoMaster AI (see `metadata.json`).
+AlgoMaster AI is an interactive single-page app for learning Data Structures and Algorithms, with AI-powered tutoring (Claude, via the Anthropic API), algorithm visualizers, and an in-browser coding practice arena. `package.json` is named `react-example` but the product is AlgoMaster AI (see `metadata.json`).
 
 ## Commands
 
@@ -27,7 +27,7 @@ For full local development with AI features you need **both** `npm run dev` (cli
 
 ## Architecture
 
-A **React SPA backed by a thin Express server**. `src/main.tsx` mounts `App`, and `App.tsx` defines all routing via `react-router-dom` v7 `BrowserRouter`. The server (`server/index.ts`) exists to keep the Gemini API key off the client and to serve the built SPA in production. Note: `better-sqlite3` is still a listed dependency but is **not used** — there is no database yet.
+A **React SPA backed by a thin Express server**. `src/main.tsx` mounts `App`, and `App.tsx` defines all routing via `react-router-dom` v7 `BrowserRouter`. The server (`server/index.ts`) exists to keep the Anthropic API key off the client and to serve the built SPA in production. Note: `better-sqlite3` is still a listed dependency but is **not used** — there is no database yet.
 
 ### Routing (`src/App.tsx`)
 All routes nest under `Layout`:
@@ -42,13 +42,13 @@ All routes nest under `Layout`:
 `TOPICS` is the single source of truth for all learning content — an array of `Topic` objects (`id`, `title`, `description`, `category`, `icon`). Dashboard, Curriculum, Practice, and TopicDetail all iterate over this array. **To add a learning topic, add an entry here**; pages pick it up automatically. `category` is one of `'basics' | 'data-structures' | 'algorithms' | 'advanced'`.
 
 ### AI integration — client ↔ server split
-- **Client** (`src/lib/gemini.ts`): `generateExplanation` and `checkSolution` are thin `fetch` wrappers that POST to `/api/explain` and `/api/review`. They **throw on failure** so callers can render error states and offer retry (do not expect a fallback string).
-- **Server** (`server/index.ts`): holds `GEMINI_API_KEY`, calls `@google/genai`, and owns the prompts. Model ids are centralized as `FLASH_MODEL` (`gemini-3-flash-preview`, used for explanations) and `PRO_MODEL` (`gemini-3.1-pro-preview`, used for code review) — **update model ids here**. Returns `503` if the key is unset, `400` on bad input, `502` on upstream errors.
+- **Client** (`src/lib/ai.ts`): `generateExplanation` and `checkSolution` are thin `fetch` wrappers that POST to `/api/explain` and `/api/review`. They **throw on failure** so callers can render error states and offer retry (do not expect a fallback string).
+- **Server** (`server/index.ts`): holds `ANTHROPIC_API_KEY`, calls Claude via the official `@anthropic-ai/sdk`, and owns the prompts. The model is centralized in the `MODEL` constant (`claude-opus-4-8`) — **change the model here**. Both endpoints use adaptive thinking and **stream** server-side (assembling the reply with `stream.finalMessage()`) so long outputs don't hit request timeouts; only the final text is returned as JSON. Returns `503` if the key is unset, `400` on bad input, `502` on upstream errors.
 - **Dev wiring**: `vite.config.ts` proxies `/api` → `API_PROXY_TARGET` (default `http://localhost:3001`). In production the same Express server serves `dist/` and the API.
 
 ### TopicDetail — the central screen (`src/pages/TopicDetail.tsx`)
 Resolves the topic from `TOPICS` by `:topicId` and renders three tabs:
-- **Theory** — `loadExplanation` serves a cached lesson from localStorage (`algomaster:theory:<id>`) or calls Gemini, caching the result. Has loading / error (with a "Try again" button) / content states.
+- **Theory** — `loadExplanation` serves a cached lesson from localStorage (`algomaster:theory:<id>`) or calls Claude, caching the result. Has loading / error (with a "Try again" button) / content states.
 - **Visualize** — dispatches by topic id: `sorting` → `SortingVisualizer`, `graphs`/`searching` → `PathfindingVisualizer`, otherwise a "coming soon" placeholder.
 - **Practice** — renders `ProblemRunner`.
 - A "Mark complete" toggle in the header drives completion state.
@@ -78,5 +78,5 @@ Self-contained, state-driven animations sharing a common pattern: an `async` alg
 
 ## Environment & AI Studio specifics
 
-- `GEMINI_API_KEY` is read **only by the backend server** — it is no longer injected into the client bundle. Copy `.env.example` to `.env` / `.env.local` and set it (plus optional `PORT`, `API_PROXY_TARGET`). `.env*` is git-ignored except `.env.example`.
+- `ANTHROPIC_API_KEY` is read **only by the backend server** — it is never injected into the client bundle. Copy `.env.example` to `.env` / `.env.local` and set it (plus optional `PORT`, `API_PROXY_TARGET`). `.env*` is git-ignored except `.env.example`.
 - **Do not modify the `server.hmr` logic in `vite.config.ts`.** HMR is gated by the `DISABLE_HMR` env var; AI Studio disables file watching to prevent flicker during agent edits. (Adding to `server.proxy` is fine.)
