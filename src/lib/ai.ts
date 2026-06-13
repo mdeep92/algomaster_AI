@@ -1,7 +1,7 @@
 /**
- * Client-side wrappers for the AI endpoints. The Gemini API key lives on the
- * server (see `server/index.ts`); the browser only talks to our own `/api`
- * routes, which are proxied to the backend in dev (see vite.config.ts).
+ * Client-side wrappers for the AI endpoints. The Anthropic API key lives on the
+ * server (see `server/index.ts`), which calls Claude; the browser only talks to
+ * our own `/api` routes, proxied to the backend in dev (see vite.config.ts).
  *
  * These functions throw on failure so callers can render proper error states
  * and offer a retry, rather than silently rendering a fallback string.
